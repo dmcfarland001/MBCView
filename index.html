@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Three.js Fulcrum Slider Demo</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+    /* Slider UI style */
+    #fulcrum-slider {
+      position: fixed;
+      left: 24px;
+      top: 50%;
+      transform: translateY(-50%) rotate(-90deg);
+      width: 200px;
+      z-index: 10;
+    }
+  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body>
+  <!-- Slider to move the fulcrum down -->
+  <input id="fulcrum-slider" type="range" min="0" max="2" step="0.01" value="0" />
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+// =======================
+// Scene, Camera, Renderer
+// =======================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xeeeeee);
+
+const camera = new THREE.PerspectiveCamera(
+  60,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  2000
+);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.physicallyCorrectLights = true;
+document.body.appendChild(renderer.domElement);
+
+// =======================
+// Lighting
+// =======================
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8888aa, 1.0); // brighter
+scene.add(hemiLight);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // new: soft fill everywhere
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5); // stronger
+dirLight.position.set(10, 20, 10);
+dirLight.castShadow = true;
+dirLight.shadow.bias = -0.001;
+scene.add(dirLight);
+
+const fillLight1 = new THREE.DirectionalLight(0xffffff, 0.7);
+fillLight1.position.set(-15, 8, 5);
+scene.add(fillLight1);
+
+const fillLight2 = new THREE.DirectionalLight(0xffffff, 0.7);
+fillLight2.position.set(15, 5, -8);
+scene.add(fillLight2);
+
+const rectLight = new THREE.RectAreaLight(0xffffff, 8.0, 15, 15);
+rectLight.position.set(0, -10, 0);
+rectLight.rotation.x = Math.PI / 2;
+scene.add(rectLight);
+
+const underLight = new THREE.SpotLight(0xffffff, 2.0, 50, Math.PI / 3, 0.4);
+// Lower the underLight by 10%
+underLight.position.set(0, -12 * 1.1, 0); // was -12, now -13.2
+underLight.target.position.set(0, 0, 0);
+scene.add(underLight);
+scene.add(underLight.target);
+
+// NEW: Add a point light inside the gap to light the interior as it opens
+const gapLight = new THREE.PointLight(0xffffff, 2.5, 10);
+gapLight.position.set(0, 0, 0); // Centered; adjust as needed
+scene.add(gapLight);
+
+// =======================
+// Controls
+// =======================
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+
+// =======================
+// Model Variables
+// =======================
+let fulcrum, topComponent; // the two components
+let fulcrumInitialY = 0;   // store initial Y to start slider correctly
+const maxSeparation = 2;    // how far down fulcrum can move
+
+// =======================
+// Load GLTF Model
+// =======================
+const loader = new GLTFLoader();
+loader.load(
+  "./MBC.glb",
+  function (gltf) {
+    const model = gltf.scene;
+    
+    // Find the two components by name
+    fulcrum = model.getObjectByName("Small_Fulrum999990000");
+    topComponent = model.getObjectByName("Component1900top");
+
+    scene.add(model);
+
+    // =======================
+    // Center & Scale Model
+    // =======================
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    model.position.sub(center);
+
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const scale = 10 / maxDim;
+    model.scale.set(scale, scale, scale);
+
+    // =======================
+    // Camera placement
+    // =======================
+    const scaledBox = new THREE.Box3().setFromObject(model);
+    const scaledSize = scaledBox.getSize(new THREE.Vector3());
+    const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+    const fov = camera.fov * (Math.PI / 180);
+    let cameraZ = Math.abs(Math.max(scaledSize.x, scaledSize.y, scaledSize.z) / 2 / Math.tan(fov / 2));
+    cameraZ *= 1.2;
+    camera.position.set(0, scaledSize.y * 0.5, cameraZ);
+    controls.target.copy(scaledCenter);
+    controls.update();
+
+    // =======================
+    // Fulcrum Slider Setup with limited range (9% of full motion)
+    // =======================
+    fulcrumInitialY = fulcrum.position.y; // store original Y
+
+    // Compute bounding boxes
+    const topBox = new THREE.Box3().setFromObject(topComponent);
+    const fulcrumBox = new THREE.Box3().setFromObject(fulcrum);
+
+    // Full available range (without intersection)
+    const fullRange = fulcrum.position.y - topBox.min.y - (fulcrumBox.max.y - fulcrumBox.min.y);
+
+    // Limit to 9%
+    const limitedRange = fullRange * 0.09;
+
+    const slider = document.getElementById('fulcrum-slider');
+    slider.min = 0;       // 0 = bottom (maximum downward movement)
+    slider.max = 1;       // 1 = top (original position)
+    slider.step = 0.001;
+    slider.value = 1;     // Start at 100% (original position)
+
+    // Map slider value to fulcrum Y (inverted)
+    // t = 1 → original position
+    // t = 0 → maximum downward movement
+    slider.oninput = function () {
+      const t = parseFloat(slider.value);
+      fulcrum.position.y = fulcrumInitialY + limitedRange * (1 - t);
+    };
+
+    // Force initial position
+    slider.oninput();
+
+    animate();
+  },
+  undefined,
+  function (error) {
+    console.error("Error loading model:", error);
+  }
+);
+
+// =======================
+// Responsive Resize
+// =======================
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// =======================
+// Animation Loop
+// =======================
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+
+  // If both components are loaded, keep the gap light between them
+  if (fulcrum && topComponent) {
+    // Place the light just below the top component, or between the two
+    const topY = topComponent.position.y;
+    const fulcrumY = fulcrum.position.y;
+    gapLight.position.y = (topY + fulcrumY) / 2;
+    gapLight.position.x = 0;
+    gapLight.position.z = 0;
+  }
+
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
