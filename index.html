@@ -15,12 +15,63 @@
       width: 200px;
       z-index: 10;
     }
+    /* Icon container */
+    #icon-container {
+      position: fixed;
+      left: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 11;
+    }
+    .icon-btn {
+      width: 0;
+      height: 0;
+      border-left: 22px solid transparent;
+      border-right: 22px solid transparent;
+      cursor: pointer;
+    }
+    .icon-up {
+      border-bottom: 30px solid #333;
+    }
+    .icon-down {
+      border-top: 30px solid #333;
+    }
+    .icon-btn:hover {
+      opacity: 0.7;
+    }
+    /* Reset view button style */
+    #reset-view {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 0;
+      height: 0;
+      border-top: 20px solid transparent;
+      border-bottom: 20px solid transparent;
+      border-left: 30px solid #333; /* ▶ arrow shape */
+      cursor: pointer;
+      z-index: 12;
+      transition: transform 0.3s ease; /* smooth rotation */
+    }
   </style>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
-  <!-- Slider to move the fulcrum down -->
+  <!-- Icons stacked vertically -->
+  <div id="icon-container">
+    <div id="hide-top" class="icon-btn icon-up"></div>
+    <div id="hide-bottom" class="icon-btn icon-down"></div>
+  </div>
+
+  <!-- Slider -->
   <input id="fulcrum-slider" type="range" min="0" max="2" step="0.01" value="0" />
+
+  <!-- Add this button just before your closing </body> tag -->
+  <div id="reset-view" title="Cycle View"></div>
 
 <script type="importmap">
 {
@@ -58,13 +109,13 @@ document.body.appendChild(renderer.domElement);
 // =======================
 // Lighting
 // =======================
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8888aa, 1.0); // brighter
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x8888aa, 1.0);
 scene.add(hemiLight);
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5); // new: soft fill everywhere
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
 scene.add(ambientLight);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 1.5); // stronger
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
 dirLight.position.set(10, 20, 10);
 dirLight.castShadow = true;
 dirLight.shadow.bias = -0.001;
@@ -84,15 +135,13 @@ rectLight.rotation.x = Math.PI / 2;
 scene.add(rectLight);
 
 const underLight = new THREE.SpotLight(0xffffff, 2.0, 50, Math.PI / 3, 0.4);
-// Lower the underLight by 10%
-underLight.position.set(0, -12 * 1.1, 0); // was -12, now -13.2
+underLight.position.set(0, -12 * 1.1, 0);
 underLight.target.position.set(0, 0, 0);
 scene.add(underLight);
 scene.add(underLight.target);
 
-// NEW: Add a point light inside the gap to light the interior as it opens
 const gapLight = new THREE.PointLight(0xffffff, 2.5, 10);
-gapLight.position.set(0, 0, 0); // Centered; adjust as needed
+gapLight.position.set(0, 0, 0);
 scene.add(gapLight);
 
 // =======================
@@ -105,9 +154,9 @@ controls.dampingFactor = 0.05;
 // =======================
 // Model Variables
 // =======================
-let fulcrum, topComponent; // the two components
-let fulcrumInitialY = 0;   // store initial Y to start slider correctly
-const maxSeparation = 2;    // how far down fulcrum can move
+let fulcrum, topComponent;
+let fulcrumInitialY = 0;
+const maxSeparation = 2;
 
 // =======================
 // Load GLTF Model
@@ -118,15 +167,11 @@ loader.load(
   function (gltf) {
     const model = gltf.scene;
     
-    // Find the two components by name
     fulcrum = model.getObjectByName("Small_Fulrum999990000");
     topComponent = model.getObjectByName("Component1900top");
 
     scene.add(model);
 
-    // =======================
-    // Center & Scale Model
-    // =======================
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
@@ -136,9 +181,6 @@ loader.load(
     const scale = 10 / maxDim;
     model.scale.set(scale, scale, scale);
 
-    // =======================
-    // Camera placement
-    // =======================
     const scaledBox = new THREE.Box3().setFromObject(model);
     const scaledSize = scaledBox.getSize(new THREE.Vector3());
     const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
@@ -149,37 +191,85 @@ loader.load(
     controls.target.copy(scaledCenter);
     controls.update();
 
-    // =======================
-    // Fulcrum Slider Setup with limited range (9% of full motion)
-    // =======================
-    fulcrumInitialY = fulcrum.position.y; // store original Y
+    fulcrumInitialY = fulcrum.position.y;
 
-    // Compute bounding boxes
     const topBox = new THREE.Box3().setFromObject(topComponent);
     const fulcrumBox = new THREE.Box3().setFromObject(fulcrum);
-
-    // Full available range (without intersection)
     const fullRange = fulcrum.position.y - topBox.min.y - (fulcrumBox.max.y - fulcrumBox.min.y);
-
-    // Limit to 9%
     const limitedRange = fullRange * 0.09;
 
     const slider = document.getElementById('fulcrum-slider');
-    slider.min = 0;       // 0 = bottom (maximum downward movement)
-    slider.max = 1;       // 1 = top (original position)
+    slider.min = 0;
+    slider.max = 1;
     slider.step = 0.001;
-    slider.value = 1;     // Start at 100% (original position)
+    slider.value = 1;
 
-    // Map slider value to fulcrum Y (inverted)
-    // t = 1 → original position
-    // t = 0 → maximum downward movement
     slider.oninput = function () {
       const t = parseFloat(slider.value);
       fulcrum.position.y = fulcrumInitialY + limitedRange * (1 - t);
     };
 
-    // Force initial position
     slider.oninput();
+
+    // ==========
+    // ICON EVENTS
+    // ==========
+    document.getElementById("hide-top").onclick = () => {
+      if (topComponent) topComponent.visible = !topComponent.visible;
+    };
+    document.getElementById("hide-bottom").onclick = () => {
+      if (fulcrum) fulcrum.visible = !fulcrum.visible;
+    };
+
+    // ==========
+    // RESET VIEW EVENT
+    // ==========
+    document.getElementById("reset-view").onclick = () => {
+      camera.position.set(0, scaledSize.y * 0.5, cameraZ);
+      controls.target.copy(scaledCenter);
+      controls.update();
+    };
+
+    // =========
+    // RESET VIEW CYCLER
+    // =========
+    let viewIndex = 0;
+    const views = ["front", "side", "top", "back"];
+    const resetBtn = document.getElementById("reset-view");
+
+    resetBtn.onclick = () => {
+      if (!fulcrum || !topComponent) return;
+
+      const box = new THREE.Box3().setFromObject(scene);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+
+      // Step to the next view
+      viewIndex = (viewIndex + 1) % views.length;
+      const view = views[viewIndex];
+
+      switch (view) {
+        case "front": // +Z
+          camera.position.set(center.x, center.y, size.z * 1.5);
+          resetBtn.style.transform = "rotate(0deg)";
+          break;
+        case "side": // +X
+          camera.position.set(size.x * 1.5, center.y, center.z);
+          resetBtn.style.transform = "rotate(90deg)";
+          break;
+        case "top": // +Y
+          camera.position.set(center.x, size.y * 9, center.z); // zoomed out more
+          resetBtn.style.transform = "rotate(180deg)";
+          break;
+        case "back": // -Z
+          camera.position.set(center.x, center.y, -size.z * 1.5);
+          resetBtn.style.transform = "rotate(-90deg)";
+          break;
+      }
+
+      controls.target.copy(center);
+      controls.update();
+    };
 
     animate();
   },
@@ -205,9 +295,7 @@ function animate() {
   requestAnimationFrame(animate);
   controls.update();
 
-  // If both components are loaded, keep the gap light between them
   if (fulcrum && topComponent) {
-    // Place the light just below the top component, or between the two
     const topY = topComponent.position.y;
     const fulcrumY = fulcrum.position.y;
     gapLight.position.y = (topY + fulcrumY) / 2;
